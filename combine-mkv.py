@@ -21,8 +21,9 @@ def extract_episode_number(filename: str) -> Union[str, None]:
     match = re.search(r'[- _](\d{2})\b', filename)
     return match.group(1) if match else None
 
-def get_episode_files(episode_num: str, media_files: List[Path]) -> List[Path]:
-    # Используем ту же логику извлечения номера для всех файлов
+def get_episode_files(episode_num: Union[str, None], media_files: List[Path]) -> List[Path]:
+    if episode_num is None:
+        return sorted(media_files)
     return sorted([f for f in media_files if extract_episode_number(f.name) == episode_num])
 
 def merge_files(mkv_file: Path, audio_files: List[Path], sub_files: List[Path], output_dir: Path):
@@ -58,9 +59,17 @@ def process_target(target_path: Path):
     output_dir = root_dir / "Merged"
     output_dir.mkdir(exist_ok=True)
     
-    # Поддержка разных аудиоформатов
-    audio_files = find_media_files(root_dir / "Sound", ['.aac', '.mka'])
-    sub_files = find_media_files(root_dir / "Subs", ['.ass'])
+    # Поиск всех папок с аудио и субтитрами
+    audio_dirs = [d for d in root_dir.iterdir() if d.is_dir() and d.name.lower().startswith("sound")]
+    sub_dirs = [d for d in root_dir.iterdir() if d.is_dir() and d.name.lower().startswith("sub")]
+    
+    audio_files = []
+    for audio_dir in audio_dirs:
+        audio_files.extend(find_media_files(audio_dir, ['.aac', '.mka']))
+        
+    sub_files = []
+    for sub_dir in sub_dirs:
+        sub_files.extend(find_media_files(sub_dir, ['.ass']))
     
     for mkv in mkv_files:
         if "Extras" in str(mkv) or "Transformation" in str(mkv):
@@ -68,17 +77,18 @@ def process_target(target_path: Path):
             
         ep_num = extract_episode_number(mkv.name)
         if not ep_num:
-            print(f"⚠ Не удалось определить номер эпизода для {mkv.name}")
-            continue
-            
-        print(f"\nОбработка эпизода {ep_num}: {mkv.name}")
-        matching_audio = get_episode_files(ep_num, audio_files)
-        matching_subs = get_episode_files(ep_num, sub_files)
+            print(f"\nОбработка файла без номера эпизода: {mkv.name}")
+            matching_audio = audio_files
+            matching_subs = sub_files
+        else:
+            print(f"\nОбработка эпизода {ep_num}: {mkv.name}")
+            matching_audio = get_episode_files(ep_num, audio_files)
+            matching_subs = get_episode_files(ep_num, sub_files)
         
         if matching_audio or matching_subs:
             merge_files(mkv, matching_audio, matching_subs, output_dir)
         else:
-            print(f"⚠ Нет дополнительных дорожек для эпизода {ep_num}")
+            print(f"⚠ Нет дополнительных дорожек для {mkv.name}")
 
 def main():
     parser = argparse.ArgumentParser(description='MKV Muxer для аниме')
